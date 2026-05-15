@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tuto — Alertes Garmin | GPX Roadbook</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8f7f5;
+      --surface: #ffffff;
+      --border: #d8d4cf;
+      --text: #1a1917;
+      --text2: #6b6763;
+      --text3: #9e9a96;
+      --accent: #e05c2a;
+      --accent2: #c44e1f;
+      --radius: 8px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    /* ── Nav bar ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    nav .logo { font-weight: 700; font-size: 15px; text-decoration: none; color: var(--text); }
+    nav .back-link { font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 500; }
+    nav .back-link:hover { text-decoration: underline; }
+
+    /* ── Content ── */
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -.02em;
+    }
+
+    .subtitle {
+      color: var(--text2);
+      font-size: 16px;
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 40px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 24px 0 8px;
+      color: var(--accent2);
+    }
+
+    p { margin-bottom: 12px; }
+
+    ol, ul {
+      margin-left: 20px;
+      margin-bottom: 16px;
+    }
+
+    li { margin-bottom: 8px; }
+
+    code {
+      font-family: var(--mono);
+      background: #eeecea;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      margin-left: 0;
+      padding-left: 0;
+    }
+
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding-left: 40px;
+      margin-bottom: 16px;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 26px;
+      height: 26px;
+      background: var(--accent);
+      color: white;
+      border-radius: 50%;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tip {
+      background: #fff8f0;
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+
+    .tip strong { color: var(--accent2); }
+
+    .warning {
+      background: #fff0f0;
+      border-left: 3px solid #b5000e;
+      padding: 12px 16px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+
+    .warning strong { color: #b5000e; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 16px 0;
+    }
+
+    th, td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+
+    th {
+      background: var(--bg);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--text2);
+    }
+
+    .device-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    @media (max-width: 600px) {
+      .device-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 22px; }
+    }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 32px;
+    }
+    .toc h3 { margin-top: 0; color: var(--text); }
+    .toc ol { margin-bottom: 0; }
+    .toc a { color: var(--accent); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">🗺 GPX Roadbook</a>
+  <a href="/" class="back-link">← Retour à l'app</a>
+</nav>
+
+<div class="container">
+
+  <h1>Alertes waypoints sur Garmin</h1>
+  <p class="subtitle">Comment transférer votre roadbook GPX sur votre Garmin et recevoir des alertes à l'approche de chaque point.</p>
+
+  <div class="toc">
+    <h3>Sommaire</h3>
+    <ol>
+      <li><a href="#principe">Comment ça marche</a></li>
+      <li><a href="#export">Exporter le GPX enrichi</a></li>
+      <li><a href="#transfert">Transférer sur le Garmin</a></li>
+      <li><a href="#config">Configurer les alertes</a></li>
+      <li><a href="#appareils">Par appareil</a></li>
+      <li><a href="#faq">Questions fréquentes</a></li>
+    </ol>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="principe">1. Comment ça marche</h2>
+
+  <p>Le fichier GPX exporté contient deux choses :</p>
+  <ul>
+    <li>Le <strong>parcours</strong> (trace GPS originale)</li>
+    <li>Les <strong>waypoints</strong> (communes, ravitos, secteurs pavés, dangers…) ajoutés par le roadbook</li>
+  </ul>
+
+  <p>Quand vous chargez ce fichier sur votre Garmin comme <strong>parcours</strong>, le GPS affiche le nom de chaque waypoint quand vous en approchez. Exactement comme un roadbook qui défile automatiquement.</p>
+
+  <div class="tip">
+    <strong>💡 Astuce :</strong> Le nom affiché sur le Garmin est au format <code>🏘 Roubaix (-42.5km)</code> — le kilométrage restant est intégré directement dans le nom pour un repérage facile.
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="export">2. Exporter le GPX enrichi</h2>
+
+  <ol class="steps">
+    <li>Chargez votre fichier GPX dans l'application</li>
+    <li>Cliquez sur <strong>✨ Détecter les communes</strong> pour remplir le roadbook automatiquement</li>
+    <li>Ajoutez vos points personnalisés si besoin (ravitos, pavés, dangers…)</li>
+    <li>Cliquez sur <strong>⬇ GPX</strong> pour télécharger le fichier enrichi</li>
+  </ol>
+
+  <p>Le fichier exporté s'appelle <code>votre-trace_roadbook.gpx</code>.</p>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="transfert">3. Transférer sur le Garmin</h2>
+
+  <h3>Option A — Via Garmin Connect (recommandé)</h3>
+  <ol class="steps">
+    <li>Allez sur <strong>connect.garmin.com</strong> → Entraînement → Parcours</li>
+    <li>Cliquez <strong>Importer</strong> et sélectionnez votre fichier <code>_roadbook.gpx</code></li>
+    <li>Donnez un nom au parcours et cliquez <strong>Enregistrer</strong></li>
+    <li>Le parcours se synchronise automatiquement sur votre Garmin via Wi-Fi ou Bluetooth</li>
+  </ol>
+
+  <div class="warning">
+    <strong>⚠️ Attention :</strong> Garmin Connect peut parfois supprimer les waypoints à l'import. Vérifiez qu'ils apparaissent bien. Si ce n'est pas le cas, utilisez l'option B.
+  </div>
+
+  <h3>Option B — Via câble USB (le plus fiable)</h3>
+  <ol class="steps">
+    <li>Branchez votre Garmin en USB à votre ordinateur</li>
+    <li>Le Garmin apparaît comme un disque amovible</li>
+    <li>Copiez le fichier <code>_roadbook.gpx</code> dans le dossier <code>Garmin/NewFiles/</code></li>
+    <li>Débranchez proprement — le Garmin importe automatiquement le fichier au redémarrage</li>
+  </ol>
+
+  <div class="tip">
+    <strong>💡 Astuce :</strong> Le dossier <code>NewFiles</code> est le plus fiable : le Garmin le traite à chaque démarrage et déplace le fichier dans le bon emplacement interne.
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="config">4. Configurer les alertes</h2>
+
+  <p>Pour recevoir une alerte (bip + affichage du nom) à l'approche d'un waypoint, il faut activer les <strong>alertes de parcours</strong> sur votre Garmin :</p>
+
+  <ol class="steps">
+    <li>Sur le Garmin, allez dans <strong>Paramètres</strong> → <strong>Parcours</strong> (ou <strong>Navigation</strong>)</li>
+    <li>Activez <strong>Alertes de parcours</strong> ou <strong>Course Point Alerts</strong></li>
+    <li>Lancez votre activité, puis chargez le parcours depuis le menu <strong>Navigation → Parcours</strong></li>
+  </ol>
+
+  <p>Selon votre modèle, le chemin peut varier :</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Paramètre</th>
+        <th>Emplacement typique</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Alertes de parcours</td>
+        <td>Paramètres → Activité → Navigation → Alertes de parcours</td>
+      </tr>
+      <tr>
+        <td>Guidage virage</td>
+        <td>Paramètres → Activité → Navigation → Guidage</td>
+      </tr>
+      <tr>
+        <td>Écran parcours</td>
+        <td>Paramètres → Activité → Écrans → Ajouter → Carte</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="appareils">5. Par appareil</h2>
+
+  <div class="device-grid">
+    <div class="card">
+      <div class="card-title">⌚ Edge 530 / 830 / 1030+</div>
+      <p>Support complet. Écran Course Points = roadbook défilant. <a href="/guide-830.html">Voir le guide Edge 830</a></p>
+    </div>
+    <div class="card">
+      <div class="card-title">⌚ Edge 540 / 840 / 1040</div>
+      <p>Support complet avec écran amélioré. Mêmes étapes que la série précédente.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">⌚ Forerunner 255 / 955 / 965</div>
+      <p>Support des parcours avec waypoints. Transfert via Garmin Connect recommandé.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">⌚ Fénix 7 / Enduro 2 / Epix</div>
+      <p>Support complet. Les waypoints sont affichés sur la carte carto intégrée.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <strong>💡 Règle générale :</strong> Si votre Garmin peut charger un <strong>parcours</strong> (pas juste une trace), il supportera les waypoints et les alertes.
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <h2 id="faq">6. Questions fréquentes</h2>
+
+  <div class="card">
+    <div class="card-title">Les waypoints ne s'affichent pas ?</div>
+    <p>Vérifiez que vous avez bien chargé le fichier comme <strong>parcours</strong> (et non comme simple trace GPX). Essayez le transfert USB dans <code>Garmin/NewFiles/</code> si Garmin Connect les a supprimés.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Pas de bip sonore à l'approche ?</div>
+    <p>Allez dans Paramètres → Tonalités et vérifiez que les alertes sonores sont activées. Vérifiez aussi que les <strong>alertes de parcours</strong> sont bien activées dans les paramètres de navigation.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Trop de waypoints communes, l'écran est surchargé ?</div>
+    <p>Dans l'application, supprimez les communes peu pertinentes avant d'exporter. Gardez les entrées/sorties de villes importantes et les points stratégiques (ravitos, pavés, dangers).</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Puis-je modifier les points après export ?</div>
+    <p>Oui, le fichier GPX est un simple fichier texte. Vous pouvez l'éditer dans un éditeur de texte ou le recharger dans l'application.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Combien de waypoints peut gérer un Garmin ?</div>
+    <p>La plupart des modèles récents supportent au moins 200 waypoints par parcours, largement suffisant pour un roadbook.</p>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPX Roadbook</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
+<aside id="sidebar">
+
+  <header class="sidebar-header">
+    <span class="logo">🗺 GPX Roadbook</span>
+    <a href="/tuto.html" class="icon-btn" title="Tuto alertes Garmin" target="_blank">?</a>
+  </header>
+
+  <!-- ── Import ── -->
+  <section class="panel" id="panel-import">
+    <h2>Fichier GPX</h2>
+    <div id="drop-zone">
+      <span>📂 Glissez un GPX ici</span>
+      <small>ou cliquez pour parcourir</small>
+      <input type="file" id="file-input" accept=".gpx">
+    </div>
+    <div id="file-info" class="hidden">
+      <div class="file-meta">
+        <span id="file-name"></span>
+        <span id="file-stats" class="muted"></span>
+      </div>
+      <div class="btn-row">
+        <button id="btn-geocode" class="btn-primary">✨ Détecter les communes</button>
+        <button id="btn-reset" class="btn-ghost">✕ Réinitialiser</button>
+      </div>
+      <div id="geocode-progress" class="hidden">
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+        <span id="progress-label">Initialisation…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Outils waypoints ── -->
+  <section class="panel" id="panel-tools">
+    <h2>Ajouter un point</h2>
+    <p class="muted hint">Sélectionnez un type puis cliquez sur la carte</p>
+    <div class="waypoint-types" id="waypoint-types">
+      <button class="wp-type-btn" data-type="commune"     data-icon="🏘">Commune</button>
+      <button class="wp-type-btn" data-type="montee"     data-icon="⛰️">Montée</button>
+      <button class="wp-type-btn" data-type="pave"        data-icon="🪨">Secteur pavé</button>
+      <button class="wp-type-btn" data-type="ravito"      data-icon="🍌">Ravitaillement</button>
+      <button class="wp-type-btn" data-type="ruban"       data-icon="🎗">Ruban / Sprint</button>
+      <button class="wp-type-btn" data-type="danger"      data-icon="⚠️">Danger</button>
+      <button class="wp-type-btn" data-type="controle"    data-icon="🏁">Contrôle</button>
+      <button class="wp-type-btn" data-type="depart"      data-icon="🟢">Départ</button>
+      <button class="wp-type-btn" data-type="arrivee"     data-icon="🔴">Arrivée</button>
+      <button class="wp-type-btn" data-type="custom"      data-icon="📍">Point libre</button>
+    </div>
+    <div id="active-tool" class="hidden">
+      Mode ajout actif : <strong id="active-tool-name"></strong>
+      <button id="btn-cancel-tool" class="btn-ghost small">Annuler</button>
+    </div>
+  </section>
+
+  <!-- ── Roadbook ── -->
+  <section class="panel" id="panel-roadbook">
+    <div class="panel-titlebar">
+      <h2>Roadbook</h2>
+      <div class="btn-row tight">
+        <button id="btn-export-gpx" class="btn-ghost small" title="Exporter GPX enrichi">⬇ GPX</button>
+        <button id="btn-print" class="btn-ghost small" title="Imprimer / PDF">🖨 Print</button>
+      </div>
+    </div>
+    <div id="roadbook-empty" class="empty-state">
+      Chargez un GPX et lancez la détection des communes pour voir le roadbook.
+    </div>
+    <table id="roadbook-table" class="hidden">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Point</th>
+          <th>Km↑</th>
+          <th>Km↓</th>
+          <th>Suiv.</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="roadbook-body"></tbody>
+    </table>
+  </section>
+
+</aside>
+
+<!-- ══════════════════════════════ MAP ════════════════════════════════════ -->
+<main id="map-container">
+  <div id="map"></div>
+  <div id="map-overlay-hint" class="hidden">Cliquez sur la carte pour placer le point</div>
+</main>
+
+<!-- ══════════════════════════════ MODAL WAYPOINT ═════════════════════════ -->
+<div id="modal-backdrop" class="hidden">
+  <div id="modal">
+    <h3 id="modal-title">Nouveau point</h3>
+    <label>Nom
+      <input type="text" id="modal-name" placeholder="Ex: Secteur de Mons-en-Pévèle">
+    </label>
+    <label>Note (optionnel)
+      <textarea id="modal-note" rows="2" placeholder="Longueur, difficulté…"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button id="modal-cancel" class="btn-ghost">Annuler</button>
+      <button id="modal-save" class="btn-primary">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ TOAST ══════════════════════════════════ -->
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/js/gpx.js"></script>
+<script src="/js/map.js"></script>
+<script src="/js/roadbook.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
