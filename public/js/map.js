@@ -144,8 +144,11 @@ const MapManager = (() => {
   // ── Pan to coords ──────────────────────────────────────────────────────────
   function panTo(lat, lon) { map.panTo([lat, lon]); }
 
+  // ── Recalculate map size after layout change ──────────────────────────────
+  function invalidateSize() { setTimeout(() => map.invalidateSize(), 100); }
+
   return {
     init, drawTrace, createWPMarker, removeWPMarker,
-    clearWPMarkers, startPlacing, stopPlacing, snapToTrace, panTo,
+    clearWPMarkers, startPlacing, stopPlacing, snapToTrace, panTo, invalidateSize,
   };
 })();

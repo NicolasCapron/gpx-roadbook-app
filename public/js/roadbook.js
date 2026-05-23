@@ -189,7 +189,17 @@ const Roadbook = (() => {
     communes.forEach(c => add(c));
   }
 
+  // ── Restore waypoints from saved data ──────────────────────────────────────
+  function restore(savedWaypoints, total) {
+    waypoints = [];
+    totalDist = total;
+    savedWaypoints.forEach(wp => {
+      waypoints.push({ ...wp, id: Date.now() + Math.random(), distRemaining: total - wp.distFromStart });
+    });
+    _recalc();
+  }
+
   return {
-    setup, add, remove, clear, getAll, render, buildFromGeocodeNames,
+    setup, add, remove, clear, getAll, render, buildFromGeocodeNames, restore,
   };
 })();

@@ -58,6 +58,113 @@ body { display: flex; }
 }
 
 .logo { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.header-actions { display: flex; align-items: center; gap: 2px; }
+
+/* ═══ Routes list view ════════════════════════════════════════════════════ */
+#view-routes {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.routes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.routes-header h1 { font-size: 20px; font-weight: 700; }
+
+#routes-list {
+  max-width: 700px;
+  margin: 24px auto;
+  padding: 0 24px;
+}
+
+.routes-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text3);
+  font-size: 15px;
+}
+
+.routes-empty .muted { margin-top: 8px; }
+
+.route-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  transition: box-shadow .15s, border-color .15s;
+}
+
+.route-card:hover {
+  border-color: var(--text3);
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.route-info { flex: 1; min-width: 0; }
+
+.route-name {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-meta {
+  font-size: 13px;
+  color: var(--text2);
+  font-family: var(--mono);
+}
+
+.route-date {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+
+.route-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-route {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  white-space: nowrap;
+}
+
+.btn-route:hover { background: var(--bg2); border-color: var(--text3); }
+
+.btn-route.btn-edit { font-weight: 500; }
+
+.btn-route.btn-delete:hover { background: #fff0f0; border-color: #e88; color: var(--danger); }
+
+@media (max-width: 600px) {
+  .route-card { flex-direction: column; align-items: stretch; }
+  .route-actions { justify-content: flex-end; }
+}
 
 /* ═══ Panels ════════════════════════════════════════════════════════════════ */
 .panel {

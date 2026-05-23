@@ -155,11 +155,12 @@ const GPX = (() => {
   // ── Detect climbs from elevation data ─────────────────────────────────────
   // Approach: smooth → find significant local min/max → each min→max = a climb
   function detectClimbs(points, opts = {}) {
-    const MIN_GRADIENT  = opts.minGradient  || 3;    // pente moyenne minimum (%)
-    const MIN_LENGTH    = opts.minLength    || 200;  // longueur minimum (metres)
+    const MIN_GRADIENT  = opts.minGradient  || 2;    // pente moyenne minimum (%) — Garmin utilise ~2%
+    const MIN_GAIN      = opts.minGain      || 20;   // D+ minimum (metres) — Garmin utilise ~20m
+    const MIN_LENGTH    = opts.minLength    || 100;  // longueur minimum (metres) — comme Garmin
     const STEEP_PCT     = opts.steepPct     || 6;    // % local considéré comme raide (pas de min longueur)
-    const SMOOTH_WINDOW = opts.smoothWindow || 20;   // fenêtre de lissage
-    const NOISE         = opts.noise        || 8;    // seuil de bruit pour filtrer les mini-bosses (metres)
+    const SMOOTH_WINDOW = opts.smoothWindow || 12;   // fenêtre de lissage (réduite pour garder les montées courtes)
+    const NOISE         = opts.noise        || 5;    // seuil de bruit (réduit pour ne pas fusionner les montées proches)
 
     if (!points.length || points[0].ele == null) return [];
 
@@ -232,8 +233,8 @@ const GPX = (() => {
       const length = points[b.idx].dist - points[a.idx].dist;
 
       const gradient = length > 0 ? (gain / length) * 100 : 0;
-      // Côte si : ≥3% sur ≥200m, OU ≥6% quelle que soit la longueur
-      if ((gradient >= MIN_GRADIENT && length >= MIN_LENGTH) || gradient >= STEEP_PCT) {
+      // Côte si : ≥2% moyenne + ≥20m D+ + ≥150m de long, OU ≥6% quelle que soit la longueur
+      if ((gradient >= MIN_GRADIENT && gain >= MIN_GAIN && length >= MIN_LENGTH) || gradient >= STEEP_PCT) {
         climbs.push({
           startIdx: a.idx,
           endIdx:   b.idx,

@@ -3,9 +3,11 @@
 (async function App() {
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let rawGPX      = null;   // original GPX text
-  let tracePoints = [];     // parsed points
-  let activeTool  = null;   // current waypoint type being placed
+  let rawGPX        = null;   // original GPX text
+  let tracePoints   = [];     // parsed points
+  let activeTool    = null;   // current waypoint type being placed
+  let currentRouteId = null;  // ID of loaded saved route (null = new)
+  let currentFileName = '';   // original file name
 
   // ── Init ──────────────────────────────────────────────────────────────────
   MapManager.init();
@@ -34,6 +36,8 @@
         tracePoints = GPX.parse(rawGPX);
         const { totalDist, eleGain } = GPX.stats(tracePoints);
 
+        currentRouteId = null;
+        currentFileName = file.name;
         document.getElementById('file-name').textContent = file.name;
         document.getElementById('file-stats').textContent =
           `${tracePoints.length.toLocaleString('fr')} pts · ${(totalDist / 1000).toFixed(1)} km` +
@@ -297,7 +301,113 @@
   // ── Print ─────────────────────────────────────────────────────────────────
   document.getElementById('btn-print').addEventListener('click', () => window.print());
 
-  // ── Sidebar collapse ──────────────────────────────────────────────────────
+  // ── Save route ────────────────────────────────────────────────────────────
+  document.getElementById('btn-save-route').addEventListener('click', () => {
+    if (!rawGPX) { toast('⚠️ Aucun GPX chargé'); return; }
+
+    const defaultName = currentFileName.replace(/\.gpx$/i, '') || 'Mon parcours';
+    const name = prompt('Nom du parcours :', defaultName);
+    if (!name) return;
+
+    const { totalDist, eleGain } = GPX.stats(tracePoints);
+    const id = Routes.save({
+      id: currentRouteId,
+      name,
+      fileName: currentFileName,
+      rawGPX,
+      totalDist,
+      eleGain,
+      waypoints: Roadbook.getAll(),
+    });
+
+    if (id) {
+      currentRouteId = id;
+      toast('💾 Parcours sauvegardé !');
+    } else {
+      toast('❌ Espace de stockage insuffisant', 4000);
+    }
+  });
+
+  // ── Load saved route into editor ─────────────────────────────────────────
+  function loadSavedRoute(route) {
+    try {
+      rawGPX = route.rawGPX;
+      tracePoints = GPX.parse(rawGPX);
+      const { totalDist, eleGain } = GPX.stats(tracePoints);
+
+      currentRouteId = route.id;
+      currentFileName = route.fileName || '';
+
+      document.getElementById('file-name').textContent = route.name;
+      document.getElementById('file-stats').textContent =
+        `${tracePoints.length.toLocaleString('fr')} pts · ${(totalDist / 1000).toFixed(1)} km` +
+        (eleGain > 0 ? ` · D+${eleGain.toLocaleString('fr')} m` : '');
+
+      document.getElementById('drop-zone').classList.add('hidden');
+      document.getElementById('file-info').classList.remove('hidden');
+      document.getElementById('geocode-progress').classList.add('hidden');
+
+      MapManager.clearWPMarkers();
+      MapManager.drawTrace(tracePoints);
+
+      Roadbook.clear();
+      Roadbook.setup(totalDist, () => Roadbook.render());
+      Roadbook.restore(route.waypoints, totalDist);
+      Roadbook.getAll().forEach(w => MapManager.createWPMarker(w));
+      Roadbook.render();
+
+      toast('✅ Parcours chargé — ' + route.name);
+    } catch (err) {
+      toast('❌ ' + err.message, 4000);
+    }
+  }
+
+  // ── Export GPX from saved route (no need to load in editor) ──────────────
+  function exportSavedRoute(route) {
+    const enriched = GPX.exportGPX(route.rawGPX, route.waypoints);
+    const blob = new Blob([enriched], { type: 'application/gpx+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url,
+      download: (route.fileName || route.name || 'trace').replace(/\.gpx$/i, '') + '_roadbook.gpx',
+    });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('⬇ GPX exporté !');
+  }
+
+  // ── View toggle: editor ↔ routes list ────────────────────────────────────
+  function showRoutesList() {
+    document.getElementById('sidebar').classList.add('hidden');
+    document.getElementById('map-container').classList.add('hidden');
+    document.getElementById('view-routes').classList.remove('hidden');
+
+    Routes.renderList(document.getElementById('routes-list'), {
+      onEdit: (route) => {
+        loadSavedRoute(route);
+        showEditor();
+      },
+      onExport: (route) => {
+        exportSavedRoute(route);
+      },
+      onDelete: (id) => {
+        Routes.remove(id);
+        if (currentRouteId === id) currentRouteId = null;
+        showRoutesList(); // refresh
+        toast('🗑 Parcours supprimé');
+      },
+    });
+  }
+
+  function showEditor() {
+    document.getElementById('view-routes').classList.add('hidden');
+    document.getElementById('sidebar').classList.remove('hidden');
+    document.getElementById('map-container').classList.remove('hidden');
+    MapManager.invalidateSize();
+  }
+
+  document.getElementById('btn-my-routes').addEventListener('click', showRoutesList);
+  document.getElementById('btn-back-editor').addEventListener('click', showEditor);
 
   // ── Toast helper ──────────────────────────────────────────────────────────
   let toastTimer;
