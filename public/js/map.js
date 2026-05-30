@@ -9,6 +9,7 @@ const MapManager = (() => {
   // ── Marker colors by type ─────────────────────────────────────────────────
   const TYPE_COLOR = {
     commune:  '#1e5fa8',
+    montee:   '#c43000',
     pave:     '#7a5c2e',
     ravito:   '#2d7d46',
     ruban:    '#8a1f6e',
@@ -38,17 +39,37 @@ const MapManager = (() => {
     });
   }
 
-  // ── Draw GPX trace ────────────────────────────────────────────────────────
-  function drawTrace(points) {
+  // ── Draw GPX trace (blue) with climb segments (red) ────────────────────────
+  function drawTrace(points, climbs) {
     traceLayer.clearLayers();
     if (!points.length) return;
 
     const latlngs = points.map(p => [p.lat, p.lon]);
 
     // Shadow line
-    L.polyline(latlngs, { color: 'white', weight: 5, opacity: .6 }).addTo(traceLayer);
-    // Main line
-    L.polyline(latlngs, { color: '#e05c2a', weight: 3, opacity: .9 }).addTo(traceLayer);
+    L.polyline(latlngs, { color: 'white', weight: 6, opacity: .5 }).addTo(traceLayer);
+    // Main line — blue
+    L.polyline(latlngs, { color: '#2563eb', weight: 3.5, opacity: .85 }).addTo(traceLayer);
+
+    // Climb segments — red overlay
+    if (climbs && climbs.length) {
+      climbs.forEach(c => {
+        const climbLatLngs = [];
+        for (let i = c.startIdx; i <= c.endIdx; i++) {
+          climbLatLngs.push([points[i].lat, points[i].lon]);
+        }
+        // Intensity based on gradient
+        const intensity = Math.min(c.gradient / 12, 1);
+        const red = Math.round(180 + intensity * 75);   // 180–255
+        const green = Math.round(40 - intensity * 40);   // 40–0
+        const color = `rgb(${red}, ${green}, 0)`;
+
+        // Red shadow
+        L.polyline(climbLatLngs, { color: 'white', weight: 7, opacity: .5 }).addTo(traceLayer);
+        // Red line
+        L.polyline(climbLatLngs, { color, weight: 4, opacity: .95 }).addTo(traceLayer);
+      });
+    }
 
     // Start / end circles
     L.circleMarker(latlngs[0], {

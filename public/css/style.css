@@ -41,8 +41,19 @@ body { display: flex; }
 }
 
 
-#map-container { flex: 1; position: relative; overflow: hidden; }
-#map { width: 100%; height: 100%; }
+#map-container { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+#map { flex: 1; width: 100%; }
+
+/* ═══ Elevation profile ═══════════════════════════════════════════════════ */
+#profile-container {
+  height: 120px;
+  width: 100%;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#profile-canvas { display: block; }
 
 /* ═══ Sidebar Header ════════════════════════════════════════════════════════ */
 .sidebar-header {
@@ -394,7 +405,9 @@ body { display: flex; }
 .badge-arrivee   { background: #ffe8e8; color: #9b0000; }
 .badge-custom    { background: #f5f0ff; color: #4a22a0; }
 
-.btn-del {
+.rb-actions { white-space: nowrap; }
+
+.btn-edit-wp, .btn-del {
   background: none;
   border: none;
   cursor: pointer;
@@ -404,6 +417,7 @@ body { display: flex; }
   border-radius: 4px;
   transition: color .1s, background .1s;
 }
+.btn-edit-wp:hover { color: var(--info); background: #e8f0ff; }
 .btn-del:hover { color: var(--danger); background: #fff0f0; }
 
 /* ═══ Map overlay ════════════════════════════════════════════════════════ */

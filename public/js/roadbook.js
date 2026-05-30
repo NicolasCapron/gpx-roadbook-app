@@ -5,6 +5,7 @@ const Roadbook = (() => {
   let waypoints  = [];   // { id, type, name, note, lat, lon, distFromStart, distRemaining, distToNext }
   let totalDist  = 0;
   let onChanged  = null; // callback()
+  let _onEditCb  = null; // callback(id)
 
   // ── Type config ───────────────────────────────────────────────────────────
   const TYPE_LABEL = {
@@ -26,6 +27,8 @@ const Roadbook = (() => {
     onChanged = changedCb;
   }
 
+  function onEdit(cb) { _onEditCb = cb; }
+
   // ── Add waypoint ──────────────────────────────────────────────────────────
   function add(wp) {
     const id = Date.now() + Math.random();
@@ -38,6 +41,20 @@ const Roadbook = (() => {
   function remove(id) {
     waypoints = waypoints.filter(w => w.id !== id);
     _recalc();
+  }
+
+  // ── Update waypoint name/note ─────────────────────────────────────────────
+  function update(id, fields) {
+    const wp = waypoints.find(w => w.id === id);
+    if (wp) {
+      Object.assign(wp, fields);
+      _recalc();
+    }
+  }
+
+  // ── Get single waypoint by id ─────────────────────────────────────────────
+  function getById(id) {
+    return waypoints.find(w => w.id === id) || null;
   }
 
   // ── Clear all ─────────────────────────────────────────────────────────────
@@ -107,7 +124,8 @@ const Roadbook = (() => {
         <td class="rb-dist">${fromKm}</td>
         <td class="rb-dist">${remKm}</td>
         <td class="rb-next">${nextKm}</td>
-        <td>
+        <td class="rb-actions">
+          <button class="btn-edit-wp" data-id="${wp.id}" title="Modifier">✎</button>
           <button class="btn-del" data-id="${wp.id}" title="Supprimer">✕</button>
         </td>
       `;
@@ -119,6 +137,15 @@ const Roadbook = (() => {
       });
 
       tbody.appendChild(tr);
+    });
+
+    // Edit buttons
+    tbody.querySelectorAll('.btn-edit-wp').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseFloat(btn.dataset.id);
+        if (_onEditCb) _onEditCb(id);
+      });
     });
 
     // Delete buttons
@@ -183,9 +210,8 @@ const Roadbook = (() => {
       }
     });
 
-    // Skip first & last commune (duplicates with auto depart/arrivee)
+    // Skip first commune (duplicate with auto depart), keep last (entry into arrival town)
     if (communes.length > 1) communes.shift();
-    if (communes.length > 1) communes.pop();
     communes.forEach(c => add(c));
   }
 
@@ -200,6 +226,6 @@ const Roadbook = (() => {
   }
 
   return {
-    setup, add, remove, clear, getAll, render, buildFromGeocodeNames, restore,
+    setup, add, remove, update, getById, clear, getAll, render, buildFromGeocodeNames, restore, onEdit,
   };
 })();

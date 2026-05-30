@@ -11,6 +11,7 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
   MapManager.init();
+  Profile.init('profile-canvas');
 
   // ── File drop / select ────────────────────────────────────────────────────
   const dropZone  = document.getElementById('drop-zone');
@@ -31,61 +32,91 @@
   function loadGPXFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
-      try {
-        rawGPX = e.target.result;
-        tracePoints = GPX.parse(rawGPX);
-        const { totalDist, eleGain } = GPX.stats(tracePoints);
-
-        currentRouteId = null;
-        currentFileName = file.name;
-        document.getElementById('file-name').textContent = file.name;
-        document.getElementById('file-stats').textContent =
-          `${tracePoints.length.toLocaleString('fr')} pts · ${(totalDist / 1000).toFixed(1)} km` +
-          (eleGain > 0 ? ` · D+${eleGain.toLocaleString('fr')} m` : '');
-
-        document.getElementById('drop-zone').classList.add('hidden');
-        document.getElementById('file-info').classList.remove('hidden');
-
-        Roadbook.clear();
-        Roadbook.setup(totalDist, () => Roadbook.render());
-        MapManager.clearWPMarkers();
-        MapManager.drawTrace(tracePoints);
-
-        // Auto-add depart & arrivee
-        const first = tracePoints[0];
-        const last  = tracePoints[tracePoints.length - 1];
-        Roadbook.add({ type: 'depart', lat: first.lat, lon: first.lon, distFromStart: 0,
-          name: 'Départ', note: '', auto: true });
-        Roadbook.add({ type: 'arrivee', lat: last.lat, lon: last.lon, distFromStart: totalDist,
-          name: 'Arrivée', note: '', auto: true });
-
-        // Auto-detect climbs
-        const climbs = GPX.detectClimbs(tracePoints);
-        climbs.forEach(c => {
-          const lengthKm = (c.length / 1000).toFixed(1);
-          Roadbook.add({
-            type: 'montee', lat: c.lat, lon: c.lon, distFromStart: c.dist,
-            name: `${c.gain}m D+ (${c.gradient}%)`,
-            note: `${lengthKm} km · ${c.eleStart}→${c.eleEnd} m`,
-            auto: true,
-          });
-        });
-
-        Roadbook.getAll().filter(w => w.auto).forEach(w => MapManager.createWPMarker(w));
-        Roadbook.render();
-
-        toast('✅ GPX chargé — ' + (totalDist / 1000).toFixed(1) + ' km');
-      } catch (err) {
-        toast('❌ ' + err.message, 4000);
-      }
+      currentRouteId = null;
+      loadFromGPX(e.target.result, file.name);
     };
     reader.readAsText(file);
   }
 
-  // ── Reset ─────────────────────────────────────────────────────────────────
+  // ── Core GPX loading (shared by file import + reset) ─────────────────────
+  function loadFromGPX(gpxText, fileName) {
+    try {
+      rawGPX = gpxText;
+      tracePoints = GPX.parse(rawGPX);
+      const { totalDist, eleGain } = GPX.stats(tracePoints);
+
+      currentFileName = fileName;
+      document.getElementById('file-name').textContent = fileName;
+      document.getElementById('file-stats').textContent =
+        `${tracePoints.length.toLocaleString('fr')} pts · ${(totalDist / 1000).toFixed(1)} km` +
+        (eleGain > 0 ? ` · D+${eleGain.toLocaleString('fr')} m` : '');
+
+      document.getElementById('drop-zone').classList.add('hidden');
+      document.getElementById('file-info').classList.remove('hidden');
+      document.getElementById('geocode-progress').classList.add('hidden');
+      cancelActiveTool();
+
+      Roadbook.clear();
+      Roadbook.setup(totalDist, () => Roadbook.render());
+      MapManager.clearWPMarkers();
+
+      // Auto-add depart & arrivee
+      const first = tracePoints[0];
+      const last  = tracePoints[tracePoints.length - 1];
+      Roadbook.add({ type: 'depart', lat: first.lat, lon: first.lon, distFromStart: 0,
+        name: 'Départ', note: '', auto: true });
+      Roadbook.add({ type: 'arrivee', lat: last.lat, lon: last.lon, distFromStart: totalDist,
+        name: 'Arrivée', note: '', auto: true });
+
+      // Auto-detect climbs & draw profile
+      const climbs = GPX.detectClimbs(tracePoints);
+      document.getElementById('profile-container').classList.remove('hidden');
+      Profile.draw(tracePoints, climbs);
+      MapManager.drawTrace(tracePoints, climbs);
+      MapManager.invalidateSize();
+
+      climbs.forEach(c => {
+        const lengthKm = (c.length / 1000).toFixed(1);
+        const endPt = tracePoints[c.endIdx];
+        // Start of climb
+        Roadbook.add({
+          type: 'montee', lat: c.lat, lon: c.lon, distFromStart: c.dist,
+          name: `⛰️ ${c.gain}m D+ (${c.gradient}%)`,
+          note: `${lengthKm} km · ${c.eleStart}→${c.eleEnd} m`,
+          auto: true,
+        });
+        // End of climb
+        Roadbook.add({
+          type: 'montee', lat: endPt.lat, lon: endPt.lon, distFromStart: endPt.dist,
+          name: `🏔️ Sommet (${c.eleEnd} m)`,
+          note: `Fin montée ${c.gain}m D+`,
+          auto: true,
+        });
+      });
+
+      Roadbook.getAll().filter(w => w.auto).forEach(w => MapManager.createWPMarker(w));
+      Roadbook.render();
+
+      toast('✅ GPX chargé — ' + (totalDist / 1000).toFixed(1) + ' km');
+    } catch (err) {
+      toast('❌ ' + err.message, 4000);
+    }
+  }
+
+  // ── Reset (reload original GPX) ──────────────────────────────────────────
   document.getElementById('btn-reset').addEventListener('click', () => {
+    if (!rawGPX) return;
+    currentRouteId = null;
+    loadFromGPX(rawGPX, currentFileName);
+    toast('🔄 GPX rechargé');
+  });
+
+  // ── New (blank state, no GPX) ────────────────────────────────────────────
+  document.getElementById('btn-new').addEventListener('click', () => {
     rawGPX = null;
     tracePoints = [];
+    currentRouteId = null;
+    currentFileName = '';
     Roadbook.clear();
     MapManager.clearWPMarkers();
     MapManager.drawTrace([]);
@@ -93,6 +124,8 @@
     document.getElementById('drop-zone').classList.remove('hidden');
     document.getElementById('file-info').classList.add('hidden');
     document.getElementById('geocode-progress').classList.add('hidden');
+    document.getElementById('profile-container').classList.add('hidden');
+    Profile.clear();
     fileInput.value = '';
     Roadbook.render();
   });
@@ -231,23 +264,49 @@
     MapManager.stopPlacing();
   }
 
-  // ── Modal for waypoint name/note ──────────────────────────────────────────
-  let pendingWP = null;
+  // ── Modal for waypoint name/note (add + edit) ────────────────────────────
+  let pendingWP = null;   // { type, lat, lon, distFromStart } for new
+  let editingId = null;   // waypoint id when editing
 
   function openModal(type, lat, lon, distFromStart) {
     const icons = {
-      commune:'🏘', pave:'🪨', ravito:'🍌', ruban:'🎗',
+      commune:'🏘', montee:'⛰️', pave:'🪨', ravito:'🍌', ruban:'🎗',
       danger:'⚠️', controle:'🏁', depart:'🟢', arrivee:'🔴', custom:'📍',
     };
+    editingId = null;
     pendingWP = { type, lat, lon, distFromStart };
 
     document.getElementById('modal-title').textContent =
       `${icons[type] || '📍'} Nouveau point — ${type}`;
     document.getElementById('modal-name').value = '';
     document.getElementById('modal-note').value = '';
+    document.getElementById('modal-save').textContent = 'Ajouter';
     document.getElementById('modal-backdrop').classList.remove('hidden');
     setTimeout(() => document.getElementById('modal-name').focus(), 50);
   }
+
+  function openEditModal(id) {
+    const wp = Roadbook.getById(id);
+    if (!wp) return;
+    const icons = {
+      commune:'🏘', montee:'⛰️', pave:'🪨', ravito:'🍌', ruban:'🎗',
+      danger:'⚠️', controle:'🏁', depart:'🟢', arrivee:'🔴', custom:'📍',
+    };
+
+    editingId = id;
+    pendingWP = null;
+
+    document.getElementById('modal-title').textContent =
+      `${icons[wp.type] || '📍'} Modifier — ${wp.type}`;
+    document.getElementById('modal-name').value = wp.name;
+    document.getElementById('modal-note').value = wp.note || '';
+    document.getElementById('modal-save').textContent = 'Enregistrer';
+    document.getElementById('modal-backdrop').classList.remove('hidden');
+    setTimeout(() => document.getElementById('modal-name').focus(), 50);
+  }
+
+  // Register edit callback on Roadbook
+  Roadbook.onEdit(openEditModal);
 
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   document.getElementById('modal-backdrop').addEventListener('click', (e) => {
@@ -262,22 +321,35 @@
 
   function closeModal() {
     pendingWP = null;
+    editingId = null;
     document.getElementById('modal-backdrop').classList.add('hidden');
   }
 
   function saveWP() {
-    if (!pendingWP) return;
     const name = document.getElementById('modal-name').value.trim();
     const note = document.getElementById('modal-note').value.trim();
     if (!name) { document.getElementById('modal-name').focus(); return; }
 
-    const wp = { ...pendingWP, name, note };
-    const id = Roadbook.add(wp);
-    const added = Roadbook.getAll().find(w => w.id === id);
-    if (added) MapManager.createWPMarker(added);
-
-    closeModal();
-    toast(`✓ "${name}" ajouté`);
+    if (editingId) {
+      // Update existing waypoint
+      Roadbook.update(editingId, { name, note });
+      // Update marker popup
+      const wp = Roadbook.getById(editingId);
+      if (wp) {
+        MapManager.removeWPMarker(editingId);
+        MapManager.createWPMarker(wp);
+      }
+      closeModal();
+      toast(`✓ "${name}" modifié`);
+    } else if (pendingWP) {
+      // Add new waypoint
+      const wp = { ...pendingWP, name, note };
+      const id = Roadbook.add(wp);
+      const added = Roadbook.getAll().find(w => w.id === id);
+      if (added) MapManager.createWPMarker(added);
+      closeModal();
+      toast(`✓ "${name}" ajouté`);
+    }
   }
 
   // ── Export GPX ────────────────────────────────────────────────────────────
@@ -348,7 +420,13 @@
       document.getElementById('geocode-progress').classList.add('hidden');
 
       MapManager.clearWPMarkers();
-      MapManager.drawTrace(tracePoints);
+
+      // Draw profile + colored trace
+      const climbs = GPX.detectClimbs(tracePoints);
+      MapManager.drawTrace(tracePoints, climbs);
+      document.getElementById('profile-container').classList.remove('hidden');
+      Profile.draw(tracePoints, climbs);
+      MapManager.invalidateSize();
 
       Roadbook.clear();
       Roadbook.setup(totalDist, () => Roadbook.render());
