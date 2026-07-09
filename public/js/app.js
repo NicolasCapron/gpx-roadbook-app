@@ -13,6 +13,23 @@
   MapManager.init();
   Profile.init('profile-canvas');
 
+  // ── Hover sync: profile ↔ map ─────────────────────────────────────────────
+  Profile.onHover((pt) => {
+    if (pt) {
+      MapManager.showHoverMarker(pt.lat, pt.lon, pt.ele);
+    } else {
+      MapManager.hideHoverMarker();
+    }
+  });
+
+  MapManager.onTraceHover((pt) => {
+    if (pt) {
+      Profile.showCursor(pt.dist);
+    } else {
+      Profile.hideCursor();
+    }
+  });
+
   // ── File drop / select ────────────────────────────────────────────────────
   const dropZone  = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
@@ -462,8 +479,8 @@
 
     Routes.renderList(document.getElementById('routes-list'), {
       onEdit: (route) => {
-        loadSavedRoute(route);
         showEditor();
+        loadSavedRoute(route);
       },
       onExport: (route) => {
         exportSavedRoute(route);

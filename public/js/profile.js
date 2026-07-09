@@ -1,17 +1,150 @@
-/* profile.js — elevation profile with climb highlighting */
+/* profile.js — elevation profile with climb highlighting + hover sync */
 
 const Profile = (() => {
 
   let canvas, ctx;
+  let overlay, octx;      // overlay canvas for cursor (avoids full redraw)
   let cachedPoints = [];
   let cachedClimbs = [];
   let totalDist = 0;
+
+  // Coordinate mapping (set during draw, reused for hover)
+  let _padding, _chartW, _chartH, _eleMin, _eleRange, _w, _h;
+  let _hoverCb = null;      // callback(point | null)
 
   function init(canvasId) {
     canvas = document.getElementById(canvasId);
     if (!canvas) return;
     ctx = canvas.getContext('2d');
+
+    // Create overlay canvas for cursor
+    overlay = document.createElement('canvas');
+    overlay.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
+    canvas.parentElement.style.position = 'relative';
+    canvas.parentElement.appendChild(overlay);
+    octx = overlay.getContext('2d');
+
     window.addEventListener('resize', () => { if (cachedPoints.length) draw(cachedPoints, cachedClimbs); });
+
+    // ── Mouse hover on profile ──
+    canvas.addEventListener('mousemove', _onMouseMove);
+    canvas.addEventListener('mouseleave', _onMouseLeave);
+  }
+
+  function onHover(cb) { _hoverCb = cb; }
+
+  function _onMouseMove(e) {
+    if (!cachedPoints.length || !_chartW) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+
+    // Convert pixel → distance
+    const dist = ((mx - _padding.left) / _chartW) * totalDist;
+    if (dist < 0 || dist > totalDist) { _onMouseLeave(); return; }
+
+    const pt = _findClosestPoint(dist);
+    if (!pt) return;
+
+    _drawCursor(pt);
+    if (_hoverCb) _hoverCb(pt);
+  }
+
+  function _onMouseLeave() {
+    if (!cachedPoints.length) return;
+    _clearOverlay();
+    if (_hoverCb) _hoverCb(null);
+  }
+
+  // Called from outside (map hover) to show cursor at given distance
+  function showCursor(dist) {
+    if (!cachedPoints.length || dist == null) { hideCursor(); return; }
+    const pt = _findClosestPoint(dist);
+    if (pt) _drawCursor(pt);
+  }
+
+  function hideCursor() {
+    _clearOverlay();
+  }
+
+  function _findClosestPoint(dist) {
+    if (!cachedPoints.length) return null;
+    // Binary search for closest point by distance
+    let lo = 0, hi = cachedPoints.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cachedPoints[mid].dist < dist) lo = mid + 1;
+      else hi = mid;
+    }
+    const idx = lo;
+    if (idx > 0 && Math.abs(cachedPoints[idx - 1].dist - dist) < Math.abs(cachedPoints[idx].dist - dist)) {
+      return cachedPoints[idx - 1];
+    }
+    return cachedPoints[idx];
+  }
+
+  function _clearOverlay() {
+    if (octx && overlay) octx.clearRect(0, 0, overlay.width, overlay.height);
+  }
+
+  function _drawCursor(pt) {
+    if (!pt || pt.ele == null || !octx) return;
+
+    // Sync overlay size
+    const dpr = window.devicePixelRatio || 1;
+    if (overlay.width !== canvas.width || overlay.height !== canvas.height) {
+      overlay.width = canvas.width;
+      overlay.height = canvas.height;
+      overlay.style.width = _w + 'px';
+      overlay.style.height = _h + 'px';
+    }
+
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const px = _padding.left + (pt.dist / totalDist) * _chartW;
+    const py = _padding.top + _chartH - ((pt.ele - _eleMin) / _eleRange) * _chartH;
+
+    // Vertical line
+    octx.save();
+    octx.setLineDash([4, 3]);
+    octx.strokeStyle = '#e65100';
+    octx.lineWidth = 1;
+    octx.beginPath();
+    octx.moveTo(px, _padding.top);
+    octx.lineTo(px, _padding.top + _chartH);
+    octx.stroke();
+    octx.setLineDash([]);
+
+    // Dot
+    octx.beginPath();
+    octx.arc(px, py, 4.5, 0, Math.PI * 2);
+    octx.fillStyle = '#e65100';
+    octx.fill();
+    octx.strokeStyle = 'white';
+    octx.lineWidth = 1.5;
+    octx.stroke();
+
+    // Tooltip
+    const km = (pt.dist / 1000).toFixed(1);
+    const ele = Math.round(pt.ele);
+    const text = `${km} km · ${ele} m`;
+    octx.font = 'bold 10px system-ui';
+    const tw = octx.measureText(text).width + 10;
+    let tx = px - tw / 2;
+    if (tx < _padding.left) tx = _padding.left;
+    if (tx + tw > _w - _padding.right) tx = _w - _padding.right - tw;
+    let ty = py - 16;
+    if (ty < _padding.top + 2) ty = py + 18; // flip below if too high
+
+    octx.fillStyle = 'rgba(30, 30, 30, 0.88)';
+    octx.beginPath();
+    octx.roundRect(tx, ty - 11, tw, 16, 3);
+    octx.fill();
+
+    octx.fillStyle = 'white';
+    octx.textAlign = 'left';
+    octx.fillText(text, tx + 5, ty + 1);
+    octx.restore();
   }
 
   function draw(points, climbs) {
@@ -30,17 +163,23 @@ const Profile = (() => {
     canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Compute bounds
-    const padding = { top: 14, bottom: 20, left: 40, right: 10 };
-    const chartW = w - padding.left - padding.right;
-    const chartH = h - padding.top - padding.bottom;
+    // Compute bounds — store for hover reuse
+    _padding = { top: 14, bottom: 20, left: 40, right: 10 };
+    const padding = _padding;
+    _w = w; _h = h;
+    _chartW = w - padding.left - padding.right;
+    _chartH = h - padding.top - padding.bottom;
+    const chartW = _chartW;
+    const chartH = _chartH;
 
     const elevations = points.filter(p => p.ele != null).map(p => p.ele);
     if (!elevations.length) return;
 
-    const eleMin = Math.floor(Math.min(...elevations) / 10) * 10;
+    _eleMin = Math.floor(Math.min(...elevations) / 10) * 10;
     const eleMax = Math.ceil(Math.max(...elevations) / 10) * 10;
-    const eleRange = Math.max(eleMax - eleMin, 10);
+    _eleRange = Math.max(eleMax - _eleMin, 10);
+    const eleMin = _eleMin;
+    const eleRange = _eleRange;
     totalDist = points[points.length - 1].dist;
 
     function x(dist) { return padding.left + (dist / totalDist) * chartW; }
@@ -48,6 +187,7 @@ const Profile = (() => {
 
     // Clear
     ctx.clearRect(0, 0, w, h);
+    _clearOverlay();
 
     // ── Grid lines & labels ──
     ctx.strokeStyle = '#e4e1dd';
@@ -139,7 +279,8 @@ const Profile = (() => {
     cachedPoints = [];
     cachedClimbs = [];
     if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    _clearOverlay();
   }
 
-  return { init, draw, clear };
+  return { init, draw, clear, onHover, showCursor, hideCursor };
 })();
