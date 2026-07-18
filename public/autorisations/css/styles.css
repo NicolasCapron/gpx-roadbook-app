@@ -100,13 +100,11 @@ button{font-family:inherit;cursor:pointer}
 .iconbtn{width:26px;height:26px;display:grid;place-items:center;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted)}
 .iconbtn:hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)}
 .iconbtn svg{width:15px;height:15px}
-.chev2{width:16px;height:16px;color:var(--muted);transition:.15s}
-.trace.open .chev2{transform:rotate(90deg)}
-.trace-meta{padding:0 14px 9px 34px;display:flex;gap:10px;align-items:center}
+.trace-meta{padding:0 14px 9px 24px;display:flex;gap:10px;align-items:center}
 .trace-meta .m{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .mini-rail{height:7px;border-radius:4px;overflow:hidden;display:flex;flex:1;min-width:80px;background:#0c1116;border:1px solid var(--line)}
 .mini-rail i{height:100%}
-.geobar{height:3px;background:#0c1116;margin:0 14px 8px 34px;border-radius:2px;overflow:hidden;display:none}
+.geobar{height:3px;background:#0c1116;margin:0 14px 8px 24px;border-radius:2px;overflow:hidden;display:none}
 .geobar i{display:block;height:100%;background:#33507a;width:0;transition:width .2s}
 #geostatus{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--line);background:#182230;color:#cfe0ff}
 #geostatus .gs-txt{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -118,8 +116,6 @@ button{font-family:inherit;cursor:pointer}
 .gs-btn.stop:hover{background:#3a2427}
 .spin{animation:spin 1s linear infinite;transform-origin:50% 50%}
 @keyframes spin{to{transform:rotate(360deg)}}
-.trace-body{display:none;padding:2px 6px 8px}
-.trace.open .trace-body{display:block}
 .trace{border-bottom:1px solid var(--line-soft)}
 
 /* Popup menu */

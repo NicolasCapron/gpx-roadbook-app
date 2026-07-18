@@ -75,7 +75,7 @@ function parseGPX(xmlText,fallbackName){
 function addTrace(data){
   const id="t"+(seq++);
   const tint=TRACE_TINTS[state.project.traces.length%TRACE_TINTS.length];
-  const trace={id,name:data.name,tint,visible:true,open:true,points:data.points,total:data.total,geocoded:false,segments:[]};
+  const trace={id,name:data.name,tint,visible:true,points:data.points,total:data.total,geocoded:false,segments:[]};
   trace.segments=[{id:id+"-s0",country:"",region:"",department:"",commune:"",road:"Tracé complet",
                    startIdx:0,endIdx:trace.points.length-1,distance:trace.total,override:null,note:""}];
   state.project.traces.push(trace);
@@ -92,7 +92,11 @@ function initMap(){
     {attribution:"&copy; OpenStreetMap &copy; CARTO",subdomains:"abcd",maxZoom:20}).addTo(map);
   map.on("click",()=>selectSegment(null));
 }
-function segLatLngs(trace,seg){const a=Math.max(0,seg.startIdx),b=Math.min(trace.points.length-1,seg.endIdx);
+function segLatLngs(trace,seg){
+  // démarre un point avant seg.startIdx (= dernier point du segment précédent) pour que deux
+  // polylines voisines partagent un sommet et se raccordent sans trou visuel, sans toucher au
+  // calcul de distance (qui reste basé sur startIdx/endIdx tels quels).
+  const a=Math.max(0,seg.startIdx-1),b=Math.min(trace.points.length-1,seg.endIdx);
   const out=[];for(let i=a;i<=b;i++)out.push([trace.points[i].lat,trace.points[i].lon]);return out;}
 function drawTrace(trace){
   if(traceLayers[trace.id])map.removeLayer(traceLayers[trace.id]);
@@ -215,7 +219,10 @@ document.addEventListener("keydown",e=>{
 /* ============================================================
    Géocodage inverse -> région / département / commune / rue
    ============================================================ */
-const GEO={delay:1000,sample:200};
+const GEO={delay:1000};
+// Grille de cache ~11 m (4 décimales) — un point déjà vu (boucle, raccourci qui repasse sur la
+// même route, ré-identification) est servi instantanément depuis state.geocache, sans requête
+// réseau ni délai. Le cache est mutualisé entre tous les tracés du projet et persiste (save()).
 const geoKey=(lat,lon)=>lat.toFixed(4)+","+lon.toFixed(4);
 // Passe par le proxy serveur /api/geocode de l'app Roadbook (Nominatim + rate-limit + retry
 // mutualisés — voir server.js) plutôt que d'appeler Nominatim directement depuis le navigateur.
@@ -235,29 +242,35 @@ async function reverse(lat,lon){
   }catch(e){}
   const res={road,commune,region,department,cc};state.geocache[k]=res;return res;
 }
-function sampleIndices(trace,stepM){
-  const idx=[0];let last=0;
-  for(let i=1;i<trace.points.length;i++)if(trace.points[i].dist-trace.points[last].dist>=stepM){idx.push(i);last=i;}
-  if(idx[idx.length-1]!==trace.points.length-1)idx.push(trace.points.length-1);
-  return idx;
-}
 async function geocodeTrace(trace,onProgress){
   const prev={};
   for(const s of trace.segments)if(s.commune&&s.override)prev[(s.commune+"|"+s.road).toLowerCase()]={override:s.override,note:s.note};
-  const idx=sampleIndices(trace,GEO.sample);const labels=new Array(trace.points.length);
-  for(let s=0;s<idx.length;s++){
+  // On identifie CHAQUE point du GPX (plus d'échantillonnage à distance fixe) pour éviter les
+  // longs segments "trous" (Commune/route inconnue) qui apparaissaient entre deux échantillons.
+  // Le cache géographique rend cette approche rapide : seuls les points réellement nouveaux (pas
+  // encore dans state.geocache) déclenchent un vrai appel réseau + le délai de pacing ~1 req/s ;
+  // un point déjà résolu (boucle qui repasse par la même route, tracé déjà identifié) est instantané.
+  const labels=new Array(trace.points.length);
+  const progressStep=Math.max(1,Math.floor(trace.points.length/200));
+  let lastGood=null;
+  for(let i=0;i<trace.points.length;i++){
     if(trace._cancelled) return;                       // arrêt demandé
-    const i=idx[s],p=trace.points[i];const info=await reverse(p.lat,p.lon);
-    const nextI=s+1<idx.length?idx[s+1]:trace.points.length;
-    for(let j=i;j<nextI;j++)labels[j]=info;
-    if(onProgress)onProgress((s+1)/idx.length);
-    if(s<idx.length-1){
-      await new Promise(r=>setTimeout(r,GEO.delay));
-      while(geoPaused && !trace._cancelled){ updateGeoStatus(); await new Promise(r=>setTimeout(r,300)); }
+    const p=trace.points[i];
+    const wasCached=!!(state.geocache[geoKey(p.lat,p.lon)]&&state.geocache[geoKey(p.lat,p.lon)].commune);
+    const info=await reverse(p.lat,p.lon);
+    // comble les trous : un point sans résultat exploitable hérite du dernier point identifié,
+    // au lieu de créer un segment "Commune inconnue" visible sur la carte.
+    labels[i]=info.commune?info:(lastGood||info);
+    if(info.commune)lastGood=info;
+    if(!wasCached){
+      if(i<trace.points.length-1){
+        await new Promise(r=>setTimeout(r,GEO.delay));
+        while(geoPaused && !trace._cancelled){ updateGeoStatus(); await new Promise(r=>setTimeout(r,300)); }
+      }
     }
+    if(onProgress&&(i%progressStep===0||i===trace.points.length-1))onProgress((i+1)/trace.points.length);
   }
   if(trace._cancelled) return;
-  for(let j=0;j<labels.length;j++)if(!labels[j])labels[j]=labels[j-1]||{road:"",commune:"",region:"",department:"",cc:""};
 
   /* --- 1) Consolidation région/département/pays par commune (vote majoritaire) ---
      Une commune appartient à une seule région/département : on unifie pour éviter
@@ -299,8 +312,35 @@ async function geocodeTrace(trace,onProgress){
     else cur.endIdx=i;
   }
   if(cur)segs.push(cur);
+  for(const s of segs)s.distance=trace.points[s.endIdx].dist-trace.points[s.startIdx].dist;
+
+  /* --- 3) Fusion des micro-segments (< MIN_SEG_M) dans un voisin ---
+     Le géocodage point par point est très sensible au découpage fin d'OpenStreetMap (ronds-points,
+     bretelles, tronçons de voie sans nom entre deux rues nommées) : ça produit des segments d'un
+     ou deux points qui, une fois dessinés séparément sur la carte, apparaissent comme des trous /
+     pointillés. On les absorbe dans le segment voisin (le précédent, ou le suivant en tout début
+     de tracé) plutôt que de les laisser fragmenter l'affichage. */
+  const MIN_SEG_M=15;
+  for(let i=segs.length-1;i>=0&&segs.length>1;i--){
+    if(segs[i].distance>=MIN_SEG_M)continue;
+    const into=i>0?i-1:i+1;
+    const tgt=segs[into],src=segs[i];
+    tgt.startIdx=Math.min(tgt.startIdx,src.startIdx);tgt.endIdx=Math.max(tgt.endIdx,src.endIdx);
+    tgt.distance=trace.points[tgt.endIdx].dist-trace.points[tgt.startIdx].dist;
+    segs.splice(i,1);
+  }
+  // recombine deux segments adjacents qui partagent finalement la même identité (cas d'un
+  // micro-segment de bruit qui séparait deux tronçons de la même rue, absorbé d'un seul côté ci-dessus)
+  for(let i=segs.length-1;i>0;i--){
+    const a=segs[i-1],b=segs[i];
+    if(a.country===b.country&&a.region===b.region&&a.department===b.department&&a.commune===b.commune&&a.road===b.road){
+      a.endIdx=b.endIdx;a.distance=trace.points[a.endIdx].dist-trace.points[a.startIdx].dist;
+      segs.splice(i,1);
+    }
+  }
+
   let k=0;
-  for(const s of segs){s.id=trace.id+"-s"+(k++);s.distance=trace.points[s.endIdx].dist-trace.points[s.startIdx].dist;
+  for(const s of segs){s.id=trace.id+"-s"+(k++);
     const pk=(s.commune+"|"+s.road).toLowerCase();
     if(prev[pk]){s.override=prev[pk].override;s.note=prev[pk].note||"";}else{s.override=null;s.note="";}
     delete s._key;}
@@ -415,58 +455,82 @@ function coverageBar(segs){
   return bar;
 }
 
-/* ---- Section "Autorisations globales" : région -> département ---- */
+/* ---- Section "Autorisations" : région -> département/province -> commune -> rue/route/chemin ---- */
 function renderGlobal(){
   const body=$("#globalBody");body.innerHTML="";
-  // agréger tous les segments visibles identifiés
-  const segs=[];
-  for(const t of state.project.traces){if(!t.visible)continue;for(const s of t.segments)if(s.region||s.department)segs.push(s);}
-  if(!segs.length){$("#secGlobal").style.display="none";return;}
+  // agréger tous les segments visibles identifiés (tous tracés confondus), avec leur tracé
+  // d'origine (nécessaire pour ouvrir le menu de statut d'une rue précise plus bas).
+  const items=[];
+  for(const t of state.project.traces){if(!t.visible)continue;for(const s of t.segments)if(s.region||s.department||s.commune)items.push({trace:t,seg:s});}
+  if(!items.length){$("#secGlobal").style.display="none";return;}
   $("#secGlobal").style.display="block";
-  // grouper par pays>région>département
+  // grouper par pays>région>département>commune>rue
   const tree={};
-  for(const s of segs){
-    const cc=s.country||"?",r=s.region||"(région inconnue)",d=s.department||"";
-    tree[cc]??={};tree[cc][r]??={_segs:[],depts:{}};tree[cc][r]._segs.push(s);
-    if(d){tree[cc][r].depts[d]??=[];tree[cc][r].depts[d].push(s);}
+  for(const it of items){
+    const s=it.seg;const cc=s.country||"?",r=s.region||"(région inconnue)",d=s.department||"",c=s.commune||"";
+    tree[cc]??={};
+    tree[cc][r]??={_segs:[],depts:{}};tree[cc][r]._segs.push(s);
+    if(d){
+      tree[cc][r].depts[d]??={_segs:[],communes:{}};tree[cc][r].depts[d]._segs.push(s);
+      if(c){tree[cc][r].depts[d].communes[c]??=[];tree[cc][r].depts[d].communes[c].push(it);}
+    }
   }
+  const exp=state.ui.expG||(state.ui.expG={});
   const ccs=Object.keys(tree).sort();
   for(const cc of ccs){
     for(const r of Object.keys(tree[cc]).sort()){
       const rNode=tree[cc][r];const parts={cc,region:r,department:"",commune:""};
       const key=akey("region",cc,r);
-      const row=el("div","node lvl-region");
-      const twig=el("span","twig");row.appendChild(twig);
-      const flag=el("span","flag");flag.textContent=FLAG[cc]||"";
-      const nm=el("span","nm");nm.append(flag,document.createTextNode(" "+r));
-      row.appendChild(nm);
-      row.appendChild(coverageBar(rNode._segs));
-      row.appendChild(statusChip(state.project.adminStatus[key]||null,{inheritLabel:"fixer",onClick:()=>openAdminMenu("region",parts)}));
+      const rExpKey="R|"+cc+"|"+r;const rOpen=exp[rExpKey]!==false;
+      const row=nodeRow("region",r,cc,rNode._segs,rOpen,()=>{exp[rExpKey]=!rOpen;renderGlobal();},
+        state.project.adminStatus[key]||null,()=>openAdminMenu("region",parts),0,true);
       body.appendChild(row);
+      if(!rOpen)continue;
       for(const d of Object.keys(rNode.depts).sort()){
+        const dNode=rNode.depts[d];
         const dparts={cc,region:r,department:d,commune:""};const dkey=akey("dept",cc,r,d);
-        const drow=el("div","node lvl-dept indent1");
-        drow.appendChild(el("span","twig"));
-        const dnm=el("span","nm");dnm.textContent=d;drow.appendChild(dnm);
-        drow.appendChild(coverageBar(rNode.depts[d]));
-        drow.appendChild(statusChip(state.project.adminStatus[dkey]||null,{inheritLabel:"fixer",onClick:()=>openAdminMenu("dept",dparts)}));
+        const dExpKey="D|"+cc+"|"+r+"|"+d;const dOpen=exp[dExpKey]!==false;
+        const drow=nodeRow("dept",d,cc,dNode._segs,dOpen,()=>{exp[dExpKey]=!dOpen;renderGlobal();},
+          state.project.adminStatus[dkey]||null,()=>openAdminMenu("dept",dparts),1,true);
         body.appendChild(drow);
+        if(!dOpen)continue;
+        for(const c of Object.keys(dNode.communes).sort()){
+          const cItems=dNode.communes[c];
+          const cparts={cc,region:r,department:d,commune:c};const ckey=akey("commune",cc,r,d,c);
+          const cExpKey="C|"+cc+"|"+r+"|"+d+"|"+c;const cOpen=exp[cExpKey]!==false;
+          const crow=nodeRow("commune",c,cc,cItems.map(it=>it.seg),cOpen,()=>{exp[cExpKey]=!cOpen;renderGlobal();},
+            state.project.adminStatus[ckey]||null,()=>openAdminMenu("commune",cparts),2,true);
+          body.appendChild(crow);
+          if(!cOpen)continue;
+          for(const {trace,seg:s} of cItems){
+            const srow=el("div","node lvl-street indent3"+(state.selected&&state.selected.segId===s.id?" sel":""));
+            srow.appendChild(el("span","twig"));
+            const nm=el("span","nm");nm.textContent=s.road;srow.appendChild(nm);
+            if(s.note){const ni=el("span","note-i");ni.title=s.note;ni.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v12H8l-4 4V4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';srow.appendChild(ni);}
+            const km=el("span","km");km.textContent=fmtKm(s.distance);srow.appendChild(km);
+            // pastille = statut effectif (pastille pleine) ; grisée + info si héritée
+            const eff=effective(s);
+            const chip=statusChip(eff,{onClick:()=>openStreetMenu(trace,s)});
+            if(!s.override){chip.style.opacity=".72";chip.title="Hérité du niveau "+effectiveSource(s);}
+            srow.appendChild(chip);
+            srow.onclick=()=>{selectSegment({traceId:trace.id,segId:s.id});fitSeg(trace,s);};
+            body.appendChild(srow);
+          }
+        }
       }
     }
   }
 }
 
-/* ---- Tracés : arbre région > département > commune > rue ---- */
+/* ---- Tracés : liste des GPX chargés (nom, distance, statut d'identification) ---- */
 function renderTraces(){
   const wrap=$("#tracesBody");
   $("#emptyState").style.display=state.project.traces.length?"none":"block";
   $("#tracesTag").textContent=state.project.traces.length?state.project.traces.length+" tracé(s)":"";
   [...wrap.querySelectorAll(".trace")].forEach(n=>n.remove());
   for(const trace of state.project.traces){
-    const card=el("div","trace"+(trace.open?" open":""));card.dataset.trace=trace.id;
+    const card=el("div","trace");card.dataset.trace=trace.id;
     const head=el("div","trace-head");
-    const chev=el("button","iconbtn");chev.innerHTML='<svg class="chev2" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    chev.onclick=()=>{trace.open=!trace.open;renderTraces();save();};
     const tw=el("span","tw");tw.style.background=trace.tint;
     const name=el("input","trace-name");name.value=trace.name;
     name.onchange=()=>{trace.name=name.value.trim()||trace.name;renderRail();save();};
@@ -486,7 +550,7 @@ function renderTraces(){
       trace._cancelled=true; geoQueue=geoQueue.filter(x=>x!==trace.id);
       if(traceLayers[trace.id])map.removeLayer(traceLayers[trace.id]);delete traceLayers[trace.id];
       state.project.traces=state.project.traces.filter(t=>t.id!==trace.id);render();save();updateGeoStatus();};
-    head.append(chev,tw,name,geo,vis,del);card.appendChild(head);
+    head.append(tw,name,geo,vis,del);card.appendChild(head);
 
     const meta=el("div","trace-meta");
     const m1=el("span","m");m1.textContent=fmtKm(trace.total);
@@ -495,7 +559,7 @@ function renderTraces(){
     const m2=el("span","m");
     m2.textContent = trace.geocoding ? `identification… ${Math.round((trace.geoProgress||0)*100)}%`
                     : trace.queued   ? "en file d'attente"
-                    : trace.geocoded ? trace.segments.length+" rues"
+                    : trace.geocoded ? "identifié"
                     :                  "à identifier";
     meta.append(m1,mr,m2);card.appendChild(meta);
 
@@ -503,88 +567,18 @@ function renderTraces(){
     if(trace.geocoding){gb.style.display="block";gbi.style.width=(4+(trace.geoProgress||0)*96).toFixed(0)+"%";}
     card.appendChild(gb);
 
-    if(trace.open){
-      const body=el("div","trace-body");
-      if(!trace.geocoded){
-        const s0=trace.segments[0];
-        const row=el("div","node lvl-street"+(state.selected&&state.selected.segId===s0.id?" sel":""));
-        row.appendChild(el("span","twig"));
-        const nm=el("span","nm");nm.textContent="Tracé complet (non identifié)";row.appendChild(nm);
-        row.appendChild(statusChip(effective(s0),{onClick:()=>openStreetMenu(trace,s0)}));
-        row.onclick=()=>{selectSegment({traceId:trace.id,segId:s0.id});openStreetMenu(trace,s0);};
-        body.appendChild(row);
-      }else{
-        buildTraceTree(trace,body);
-      }
-      card.appendChild(body);
-    }
     wrap.appendChild(card);
   }
 }
-
-function buildTraceTree(trace,container){
-  // hiérarchie région>dept>commune>segments (dans l'ordre du parcours)
-  const regions=[];const rmap={},dmap={},cmap={};
-  for(const s of trace.segments){
-    const rk=s.region||"—",dk=(s.region||"—")+"¦"+(s.department||""),ck=dk+"¦"+(s.commune||"");
-    if(!rmap[rk]){rmap[rk]={name:s.region,cc:s.country,depts:[],_segs:[]};regions.push(rmap[rk]);}
-    rmap[rk]._segs.push(s);
-    let dnode=dmap[dk];
-    if(!dnode){dnode={name:s.department,cc:s.country,region:s.region,communes:[],_segs:[]};dmap[dk]=dnode;rmap[rk].depts.push(dnode);}
-    dnode._segs.push(s);
-    let cnode=cmap[ck];
-    if(!cnode){cnode={name:s.commune,cc:s.country,region:s.region,department:s.department,segs:[]};cmap[ck]=cnode;dnode.communes.push(cnode);}
-    cnode.segs.push(s);
-  }
-  const exp=state.ui.exp||(state.ui.exp={});
-  for(const r of regions){
-    const rExpKey=trace.id+"|R|"+r.name;const rOpen=exp[rExpKey]!==false; // régions ouvertes par défaut
-    const parts={cc:r.cc,region:r.name,department:"",commune:""};
-    const rrow=nodeRow("region",r.name,r.cc,r._segs,rOpen,()=>{exp[rExpKey]=!rOpen;renderTraces();},
-      state.project.adminStatus[akey("region",r.cc,r.name)]||null,()=>openAdminMenu("region",parts),0);
-    container.appendChild(rrow);
-    if(!rOpen)continue;
-    for(const d of r.depts){
-      const hasDept=!!d.name;
-      const dExpKey=trace.id+"|D|"+r.name+"|"+d.name;const dOpen=exp[dExpKey]!==false;
-      const dparts={cc:d.cc,region:r.name,department:d.name,commune:""};
-      if(hasDept){
-        const drow=nodeRow("dept",d.name,d.cc,d._segs,dOpen,()=>{exp[dExpKey]=!dOpen;renderTraces();},
-          state.project.adminStatus[akey("dept",d.cc,r.name,d.name)]||null,()=>openAdminMenu("dept",dparts),1);
-        container.appendChild(drow);
-        if(!dOpen)continue;
-      }
-      for(const c of d.communes){
-        const cExpKey=trace.id+"|C|"+r.name+"|"+d.name+"|"+c.name;const cOpen=exp[cExpKey]!==false;
-        const cparts={cc:c.cc,region:r.name,department:d.name,commune:c.name};
-        const crow=nodeRow("commune",c.name,c.cc,c.segs,cOpen,()=>{exp[cExpKey]=!cOpen;renderTraces();},
-          state.project.adminStatus[akey("commune",c.cc,r.name,d.name,c.name)]||null,()=>openAdminMenu("commune",cparts),hasDept?2:1);
-        container.appendChild(crow);
-        if(!cOpen)continue;
-        for(const s of c.segs){
-          const srow=el("div","node lvl-street indent"+(hasDept?3:2)+(state.selected&&state.selected.segId===s.id?" sel":""));
-          srow.appendChild(el("span","twig"));
-          const nm=el("span","nm");nm.textContent=s.road;srow.appendChild(nm);
-          if(s.note){const ni=el("span","note-i");ni.title=s.note;ni.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v12H8l-4 4V4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';srow.appendChild(ni);}
-          const km=el("span","km");km.textContent=fmtKm(s.distance);srow.appendChild(km);
-          // pastille = statut effectif (pastille pleine) ; grisée + info si héritée
-          const eff=effective(s);
-          const chip=statusChip(eff,{onClick:()=>openStreetMenu(trace,s)});
-          if(!s.override){chip.style.opacity=".72";chip.title="Hérité du niveau "+effectiveSource(s);}
-          srow.appendChild(chip);
-          srow.onclick=()=>{selectSegment({traceId:trace.id,segId:s.id});fitSeg(trace,s);};
-          container.appendChild(srow);
-        }
-      }
-    }
-  }
-}
-function nodeRow(level,name,cc,segs,open,onToggle,adminStatus,onChip,indent){
+function nodeRow(level,name,cc,segs,open,onToggle,adminStatus,onChip,indent,expandable){
   const row=el("div","node lvl-"+level+(indent?" indent"+indent:""));
   const twig=el("span","twig");
-  const tb=el("button");tb.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  row.classList.toggle("exp",open);
-  tb.onclick=e=>{e.stopPropagation();onToggle();};twig.appendChild(tb);row.appendChild(twig);
+  if(expandable){
+    const tb=el("button");tb.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    row.classList.toggle("exp",open);
+    tb.onclick=e=>{e.stopPropagation();onToggle();};twig.appendChild(tb);
+  }
+  row.appendChild(twig);
   const nm=el("span","nm");
   if(FLAG[cc]&&level==="region"){const f=el("span","flag");f.textContent=FLAG[cc];nm.append(f,document.createTextNode(" "+name));}
   else nm.textContent=name||"—";
@@ -622,7 +616,7 @@ function render(){renderOverview();renderGlobal();renderTraces();renderRail();up
 const LSKEY="roadbook_autorisations_v2";
 function serialize(){
   return {project:{name:state.project.name,adminStatus:state.project.adminStatus,
-    traces:state.project.traces.map(t=>({id:t.id,name:t.name,tint:t.tint,visible:t.visible,open:t.open,
+    traces:state.project.traces.map(t=>({id:t.id,name:t.name,tint:t.tint,visible:t.visible,
       total:t.total,geocoded:t.geocoded,points:t.points,
       segments:t.segments.map(({...s})=>s)}))},
     geocache:state.geocache,filter:state.filter,seq,ui:state.ui};
@@ -660,28 +654,24 @@ function printList(){
   const w=window.open("","_blank");
   const css=`body{font-family:Inter,Arial,sans-serif;margin:26px;color:#111}
     h1{font-size:18px;margin:0 0 2px}h2{font-size:14px;margin:18px 0 4px;border-bottom:1px solid #ccc;padding-bottom:3px}
-    h3{font-size:12px;margin:10px 0 3px;color:#444}h4{font-size:11px;margin:7px 0 2px;color:#666;font-weight:600}
     table{width:100%;border-collapse:collapse;font-size:11px}td,th{border-bottom:1px solid #e8e8e8;padding:3px 6px;text-align:left;vertical-align:top}
     .b{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;box-shadow:0 0 0 .5px #999}
     .muted{color:#888}.glob{font-size:11px}`;
   let html=`<h1>${state.project.name} — suivi des autorisations</h1><div class="muted">Édité le ${new Date().toLocaleDateString("fr-FR")}</div>`;
   const glob=Object.entries(state.project.adminStatus);
+  html+=`<h2>Autorisations posées par périmètre</h2>`;
   if(glob.length){
-    html+=`<h2>Autorisations posées par périmètre</h2>`;
     for(const [k,st] of glob){const p=k.split("|");const lvl=k[0]==="R"?"Région":k[0]==="D"?"Département/Province":"Commune";
       const nm=p[p.length-1]||"—";html+=`<div class="glob"><span class="b" style="background:${STATUS[st].color}"></span><b>${lvl} ${nm}</b> — ${STATUS[st].short}</div>`;}
+  }else{
+    html+=`<div class="muted">Aucun statut posé pour l'instant.</div>`;
   }
-  for(const t of state.project.traces){
-    html+=`<h2>${t.name} — ${fmtKm(t.total)}</h2><table><tbody>`;
-    let lr=null,lc=null;
-    for(const s of t.segments){
-      const eff=effective(s);
-      if(s.region!==lr){html+=`<tr><td colspan="4"><h3>${FLAG[s.country]||""} ${s.region||""}${s.department?" — "+s.department:""}</h3></td></tr>`;lr=s.region;lc=null;}
-      if(s.commune!==lc){html+=`<tr><td colspan="4"><h4>${s.commune||""}</h4></td></tr>`;lc=s.commune;}
-      html+=`<tr><td style="width:42%"><span class="b" style="background:${STATUS[eff].color}"></span>${s.road}</td>
-        <td style="width:13%" class="muted">${fmtKm(s.distance)}</td>
-        <td style="width:20%">${STATUS[eff].short}${s.override?"":" <span class='muted'>(hérité)</span>"}</td>
-        <td class="muted">${(s.note||"").replace(/</g,"&lt;")}</td></tr>`;
+  if(state.project.traces.length){
+    html+=`<h2>Tracés</h2><table><tbody><tr><th>Tracé</th><th>Distance</th><th>Couverture</th></tr>`;
+    for(const t of state.project.traces){
+      let all=0,done=0;for(const s of t.segments){all+=s.distance;if(COVERED.has(effective(s)))done+=s.distance;}
+      const pct=all?Math.round(done/all*100):0;
+      html+=`<tr><td>${t.name}</td><td class="muted">${fmtKm(t.total)}</td><td>${pct} % couvert</td></tr>`;
     }
     html+="</tbody></table>";
   }

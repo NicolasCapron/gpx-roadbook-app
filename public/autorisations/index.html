@@ -59,11 +59,11 @@
     </div>
 
     <div class="scroll" id="scroll">
-      <!-- Section autorisations globales (région / département) -->
+      <!-- Section Autorisations (région / département / commune) -->
       <div class="sec open" id="secGlobal" style="display:none">
         <div class="sec-h" data-toggle="secGlobal">
           <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h2>Autorisations globales</h2><span class="tag">préfecture · Sport Vlaanderen</span>
+          <h2>Autorisations</h2><span class="tag">région · département · commune · rue</span>
         </div>
         <div class="sec-body" id="globalBody"></div>
       </div>
@@ -72,13 +72,13 @@
       <div class="sec open" id="secTraces">
         <div class="sec-h" data-toggle="secTraces">
           <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h2>Tracés & rues</h2><span class="tag" id="tracesTag"></span>
+          <h2>Tracés</h2><span class="tag" id="tracesTag"></span>
         </div>
         <div class="sec-body" id="tracesBody">
           <div class="empty" id="emptyState">
             <svg viewBox="0 0 24 24" fill="none"><path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v15M15 6v15" stroke="currentColor" stroke-width="1.6"/></svg>
             <h3>Aucun tracé chargé</h3>
-            <p>Charge un ou plusieurs GPX puis lance <b>Identifier</b>. Le parcours se découpe en région → département → commune → rue. Pose un statut à n'importe quel niveau : il descend sur tout ce qu'il contient, sauf là où tu précises plus finement.</p>
+            <p>Charge un ou plusieurs GPX puis lance <b>Identifier</b>. Une fois identifié, gère les autorisations par région, département/province, commune et rue/route/chemin dans le panneau <b>Autorisations</b> ci-dessus.</p>
           </div>
         </div>
       </div>
@@ -88,7 +88,7 @@
   <div id="mapwrap">
     <div id="map"></div>
     <div class="mapctl">
-      <div class="pill hint">Clique une rue sur la carte pour son statut. Touches <kbd>1</kbd>–<kbd>5</kbd> sur la rue sélectionnée. Les niveaux région/département/commune se règlent dans le panneau.</div>
+      <div class="pill hint">Clique une rue sur la carte pour son statut (exception ponctuelle). Touches <kbd>1</kbd>–<kbd>5</kbd> sur la rue sélectionnée. Région / département / commune se règlent dans le panneau <b>Autorisations</b>.</div>
     </div>
   </div>
 
