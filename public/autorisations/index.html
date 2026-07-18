@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadbook Autorisations — suivi par rue / commune / département / région</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="brand">
+      <h1>
+        <svg class="glyph" viewBox="0 0 24 24" fill="none"><path d="M4 20 L9 4 L15 20 L20 4" stroke="#2f6fed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="4" r="1.7" fill="#1f9d55"/><circle cx="15" cy="20" r="1.7" fill="#e02424"/></svg>
+        Roadbook · Autorisations
+      </h1>
+      <p>Statut par rue, commune, département/province et région — FR / BE</p>
+    </div>
+
+    <div class="toolbar">
+      <label class="btn primary btn-file">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v10m0-10 4 4m-4-4-4 4M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Charger GPX
+        <input id="gpxInput" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+      <button class="btn ghost" id="btnGeoAll" title="Identifier communes & rues sur tous les tracés">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12Z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.4" stroke="currentColor" stroke-width="2"/></svg>
+        Identifier
+      </button>
+      <button class="btn ghost" id="btnExport" title="Exporter le projet (.json)">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Sauver
+      </button>
+      <label class="btn ghost btn-file" title="Importer un projet (.json)">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 14V3m0 11-4-4m4 4 4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Ouvrir
+        <input id="jsonInput" type="file" accept=".json,application/json">
+      </label>
+      <button class="btn ghost" id="btnPrint" title="Version imprimable">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M7 9V3h10v6M7 19H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 15h10v6H7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        Imprimer
+      </button>
+    </div>
+
+    <div id="geostatus" style="display:none">
+      <svg class="spin" viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div class="gs-txt"><span id="gsText">Identification…</span> <span id="gsQueue" class="gs-q"></span></div>
+      <button class="gs-btn" id="gsPause">Pause</button>
+      <button class="gs-btn stop" id="gsStop">Arrêter</button>
+    </div>
+
+    <div class="overview">
+      <div class="lbl">Avancé global des demandes</div>
+      <div class="gstack" id="gstack"></div>
+      <div class="gtot"><b id="gpct">0 %</b><span id="gkm">aucun tracé</span></div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="scroll" id="scroll">
+      <!-- Section autorisations globales (région / département) -->
+      <div class="sec open" id="secGlobal" style="display:none">
+        <div class="sec-h" data-toggle="secGlobal">
+          <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Autorisations globales</h2><span class="tag">préfecture · Sport Vlaanderen</span>
+        </div>
+        <div class="sec-body" id="globalBody"></div>
+      </div>
+
+      <!-- Section tracés -->
+      <div class="sec open" id="secTraces">
+        <div class="sec-h" data-toggle="secTraces">
+          <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Tracés & rues</h2><span class="tag" id="tracesTag"></span>
+        </div>
+        <div class="sec-body" id="tracesBody">
+          <div class="empty" id="emptyState">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v15M15 6v15" stroke="currentColor" stroke-width="1.6"/></svg>
+            <h3>Aucun tracé chargé</h3>
+            <p>Charge un ou plusieurs GPX puis lance <b>Identifier</b>. Le parcours se découpe en région → département → commune → rue. Pose un statut à n'importe quel niveau : il descend sur tout ce qu'il contient, sauf là où tu précises plus finement.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div class="mapctl">
+      <div class="pill hint">Clique une rue sur la carte pour son statut. Touches <kbd>1</kbd>–<kbd>5</kbd> sur la rue sélectionnée. Les niveaux région/département/commune se règlent dans le panneau.</div>
+    </div>
+  </div>
+
+  <div id="rail"><div class="rail-inner">
+    <h2>Avancé par tracé — proportionnel à la distance</h2>
+    <div id="railBody"><div style="color:var(--muted-2);font-size:12px">Les barres d'avancement apparaîtront ici.</div></div>
+  </div></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

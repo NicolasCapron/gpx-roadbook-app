@@ -16,7 +16,7 @@ function sleep(ms) {
 }
 
 async function reverseGeocode(lat, lon) {
-  const url = `${NOMINATIM_URL}?lat=${lat}&lon=${lon}&format=json&accept-language=fr&zoom=14`;
+  const url = `${NOMINATIM_URL}?lat=${lat}&lon=${lon}&format=json&accept-language=fr&zoom=17&addressdetails=1`;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
@@ -33,7 +33,15 @@ async function reverseGeocode(lat, lon) {
     if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
     const data = await res.json();
     const addr = data.address || {};
-    return addr.village || addr.town || addr.city || addr.municipality || addr.hamlet || data.name || 'Inconnu';
+    const commune = addr.village || addr.town || addr.city || addr.municipality || addr.hamlet || addr.suburb || data.name || 'Inconnu';
+    return {
+      name: commune,
+      commune,
+      road: addr.road || addr.pedestrian || addr.cycleway || addr.footway || addr.path || addr.residential || addr.living_street || addr.track || '',
+      region: addr.state || addr.region || '',
+      department: addr.county || addr.state_district || addr.province || '',
+      cc: (addr.country_code || '').toUpperCase(),
+    };
   }
 
   throw new Error(`Nominatim: 429 après ${MAX_RETRIES} tentatives`);
@@ -54,15 +62,15 @@ app.post('/api/geocode', async (req, res) => {
 
   for (let i = 0; i < points.length; i++) {
     const { lat, lon } = points[i];
-    let name;
+    let addr;
     try {
-      name = await reverseGeocode(Number(lat), Number(lon));
+      addr = await reverseGeocode(Number(lat), Number(lon));
     } catch (err) {
       console.warn(`[geocode] point ${i}: ${err.message}`);
-      name = 'Inconnu';
+      addr = { name: 'Inconnu', commune: 'Inconnu', road: '', region: '', department: '', cc: '' };
       res.write(`data:${JSON.stringify({ error: err.message })}\n\n`);
     }
-    res.write(`data:${JSON.stringify({ name })}\n\n`);
+    res.write(`data:${JSON.stringify(addr)}\n\n`);
     if (i < points.length - 1) await sleep(DELAY_MS);
   }
 

@@ -16,7 +16,7 @@ No test framework, no linter, no build step. All JS is vanilla browser globals l
 
 ## Architecture
 
-**SPA with Express backend.** The only server endpoint is `POST /api/geocode` which streams SSE responses from Nominatim (OpenStreetMap reverse geocoding). Everything else is client-side.
+**SPA with Express backend.** The only server endpoint is `POST /api/geocode` which streams SSE responses from Nominatim (OpenStreetMap reverse geocoding). Everything else is client-side. Each SSE message carries `{ name, commune, road, region, department, cc }` — the main roadbook editor only reads `name`; the `autorisations/` app reads the other fields to build its region/département/commune/rue hierarchy. Both consumers share this one rate-limited/retrying proxy rather than calling Nominatim from the browser.
 
 ### Client modules (public/js/) — load order matters
 
@@ -60,6 +60,7 @@ Auto-generated waypoints have `auto: true`. Each detected climb produces two way
 
 - `tuto.html` — Garmin alerts tutorial (transfer methods, settings, FAQ, device compatibility)
 - `guide-830.html` — Edge 830 roadbook screen setup guide with Garmin UI mockups
+- `autorisations/` — **Roadbook · Autorisations**, a fully separate app (own `index.html`/`css/`/`js/`, own Leaflet map, own `localStorage` key `roadbook_autorisations_v2`) for tracking road-closure authorization requests of a cross-border cycling event (FR/BE), street by street, with status inherited commune → département/province → région. No shared state with the main roadbook editor. It shares the tech stack (same Leaflet 1.9.4 via the unpkg CDN, no vendored copy) and reuses the server's `/api/geocode` endpoint for reverse geocoding instead of calling Nominatim directly from the browser.
 
 ### Server: Nominatim rate limiting
 
