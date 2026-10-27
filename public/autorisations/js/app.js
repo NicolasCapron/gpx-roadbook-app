@@ -88,8 +88,10 @@ function addTrace(data){
    ============================================================ */
 function initMap(){
   map=L.map("map",{zoomControl:true,preferCanvas:true}).setView([50.6,3.3],9);
-  tileLayer=L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    {attribution:"&copy; OpenStreetMap &copy; CARTO",subdomains:"abcd",maxZoom:20}).addTo(map);
+  // CARTO exige désormais une clé API sur ses tuiles basemaps.cartocdn.com (tuiles "API key
+  // required") ; on utilise OpenStreetMap standard, comme l'app principale — gratuit, sans clé.
+  tileLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {attribution:"&copy; OpenStreetMap",subdomains:"abc",maxZoom:19}).addTo(map);
   map.on("click",()=>selectSegment(null));
 }
 function segLatLngs(trace,seg){
@@ -337,6 +339,17 @@ async function geocodeTrace(trace,onProgress){
       a.endIdx=b.endIdx;a.distance=trace.points[a.endIdx].dist-trace.points[a.startIdx].dist;
       segs.splice(i,1);
     }
+  }
+
+  /* --- 4) Recalcul final exact des distances ---
+     startIdx/endIdx ne se chevauchent pas (segment suivant = endIdx+1) : le petit pas GPS qui
+     relie la fin d'un segment au début du suivant n'était compté dans aucun des deux, donc la
+     somme des distances retombait un peu sous trace.total (barres de progression qui ne remplissent
+     jamais 100%). On rattache ce pas de raccord au segment qui suit — chaque distance part donc
+     de la fin du segment précédent (0 pour le tout premier), garantissant une somme exacte. */
+  for(let idx=0;idx<segs.length;idx++){
+    const from=idx>0?segs[idx-1].endIdx:0;
+    segs[idx].distance=trace.points[segs[idx].endIdx].dist-trace.points[from].dist;
   }
 
   let k=0;
