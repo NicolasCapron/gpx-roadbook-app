@@ -30,7 +30,62 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Repli : Photon (komoot) — mêmes données OpenStreetMap, sans clé. Utilisé quand Nominatim
+// bloque l'IP (429 persistant). Après un échec Nominatim, on l'évite pendant NOMINATIM_COOLDOWN_MS.
+const PHOTON_URL = 'https://photon.komoot.io/reverse';
+// Cooldown 24 h au 1er échec, 48 h si Nominatim échoue encore à la réouverture. Persisté dans
+// .data/ (ignoré par git) pour survivre aux redémarrages du serveur de dev.
+const NOMINATIM_COOLDOWN_MS = 24 * 3600 * 1000;
+const BLOCK_PATH = path.join(__dirname, '.data', 'nominatim-block.json');
+let { until: nominatimBlockedUntil, strikes: nominatimStrikes } = (() => {
+  try { return { until: 0, strikes: 0, ...JSON.parse(fs.readFileSync(BLOCK_PATH, 'utf8')) }; }
+  catch { return { until: 0, strikes: 0 }; }
+})();
+
+function saveNominatimBlock() {
+  try {
+    fs.mkdirSync(path.dirname(BLOCK_PATH), { recursive: true });
+    fs.writeFileSync(BLOCK_PATH, JSON.stringify({ until: nominatimBlockedUntil, strikes: nominatimStrikes }));
+  } catch {}
+}
+
+async function photonReverse(lat, lon) {
+  const res = await fetch(`${PHOTON_URL}?lat=${lat}&lon=${lon}&lang=fr`, {
+    headers: { 'User-Agent': 'GPX-Roadbook-App/1.0' },
+  });
+  if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
+  const p = (await res.json()).features?.[0]?.properties;
+  if (!p) throw new Error('Photon: aucun résultat');
+  const commune = p.city || p.town || p.village || p.municipality || p.locality || p.district || p.name || 'Inconnu';
+  return {
+    name: commune,
+    commune,
+    road: p.street || (p.type === 'street' ? p.name : '') || '',
+    region: p.state || '',
+    department: p.county || '',
+    cc: (p.countrycode || '').toUpperCase(),
+  };
+}
+
 async function reverseGeocode(lat, lon) {
+  if (Date.now() >= nominatimBlockedUntil) {
+    try {
+      const r = await nominatimReverse(lat, lon);
+      if (nominatimStrikes) { nominatimStrikes = 0; saveNominatimBlock(); }
+      return r;
+    } catch (err) {
+      // 1er échec → 24 h ; échec à la réouverture (strike déjà posé) → 48 h
+      const hours = nominatimStrikes ? 48 : 24;
+      nominatimStrikes++;
+      nominatimBlockedUntil = Date.now() + (hours / 24) * NOMINATIM_COOLDOWN_MS;
+      saveNominatimBlock();
+      console.warn(`[geocode] Nominatim indisponible (${err.message}) — repli Photon pendant ${hours} h`);
+    }
+  }
+  return photonReverse(lat, lon);
+}
+
+async function nominatimReverse(lat, lon) {
   const url = `${NOMINATIM_URL}?lat=${lat}&lon=${lon}&format=json&accept-language=fr&zoom=17&addressdetails=1`;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {

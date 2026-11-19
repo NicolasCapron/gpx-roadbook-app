@@ -235,14 +235,17 @@ async function reverse(lat,lon){
   try{
     const r=await fetch("/api/geocode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({points:[{lat,lon}]})});
     const text=await r.text();
-    const line=text.split("\n").find(l=>l.startsWith("data:"));
-    if(line){
-      const payload=JSON.parse(line.slice(5));
+    // le serveur peut émettre d'abord {error} puis un repli {commune:"Inconnu"} : on ignore les deux
+    const payload=text.split("\n").filter(l=>l.startsWith("data:")).map(l=>JSON.parse(l.slice(5)))
+      .find(p=>!p.error&&p.commune&&p.commune!=="Inconnu");
+    if(payload){
       road=payload.road||""; commune=payload.commune||"";
       region=payload.region||""; department=payload.department||""; cc=payload.cc||"";
     }
   }catch(e){}
-  const res={road,commune,region,department,cc};state.geocache[k]=res;return res;
+  const res={road,commune,region,department,cc};
+  if(commune)state.geocache[k]=res;   // un échec (serveur indisponible, 429…) n'est jamais mis en cache
+  return res;
 }
 async function geocodeTrace(trace,onProgress){
   const prev={};
@@ -651,7 +654,8 @@ function migrateV1(){
 function applyData(d){
   state.project=d.project||{name:"Cyclosportive",traces:[],adminStatus:{}};
   state.project.adminStatus=state.project.adminStatus||{};
-  state.geocache=d.geocache||{};state.filter=d.filter||{off:{}};state.ui=d.ui||{};seq=d.seq||(state.project.traces.length+1);
+  state.geocache=d.geocache||{};
+  for(const k of Object.keys(state.geocache))if(!state.geocache[k]||!state.geocache[k].commune)delete state.geocache[k];   // purge des échecs héritésstate.filter=d.filter||{off:{}};state.ui=d.ui||{};seq=d.seq||(state.project.traces.length+1);
   for(const id in traceLayers){if(traceLayers[id])map.removeLayer(traceLayers[id]);delete traceLayers[id];}
   for(const t of state.project.traces)drawTrace(t);
   fitAll();render();
